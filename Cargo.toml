@@ -1,0 +1,21 @@
+[package]
+name = "aws-logs-tui"
+version = "0.1.0"
+edition = "2024"
+
+# [[bin]]
+# name = "alt"
+# path = "src/main.rs"
+
+[dependencies]
+anyhow = { version = "1.0.96", features = ["backtrace"] }
+aws-config = "1.5.17"
+aws-sdk-cloudwatchlogs = "1.71.0"
+aws-sdk-lambda = "1.70.0"
+clap = { version = "4.5.31", features = ["derive", "env", "wrap_help"] }
+color-eyre = "0.6.3"
+crossterm = "0.28.1"
+ratatui = "0.29.0"
+tokio = { version = "1.43.0", features = ["full"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
