@@ -13,8 +13,74 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph, Widget},
 };
 
-fn main() -> Result<()> {
+use clap::Parser;
+
+use aws_config::{BehaviorVersion, Region};
+use aws_sdk_lambda;
+
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// AWS Profile to use
+    #[arg(short, long)]
+    profile: Option<String>,
+
+    /// AWS Region to use
+    #[arg(short, long)]
+    region: Option<String>,
+}
+
+#[tokio::main]
+async fn main() -> Result<()> {
     color_eyre::install()?;
+
+    let cli = Cli::parse();
+
+    let mut config = aws_config::defaults(BehaviorVersion::latest());
+    if let Some(profile_name) = cli.profile {
+        config = config.profile_name(profile_name);
+    }
+    if let Some(region) = cli.region {
+        config = config.region(Region::new(region.clone()));
+    }
+    let sdk_config = config.load().await;
+
+    let lambda_client = aws_sdk_lambda::Client::new(&sdk_config);
+
+    let mut lambda_function_names = Vec::new();
+    let mut next_marker = None;
+
+    loop {
+        let mut list_functions_request = lambda_client.list_functions();
+        if let Some(marker) = next_marker {
+            list_functions_request = list_functions_request.marker(marker);
+        }
+
+        let list_functions_response = list_functions_request.send().await?;
+        let functions = list_functions_response.functions();
+        for function in functions {
+            if let Some(name) = &function.function_name {
+                lambda_function_names.push(name.clone())
+            }
+        }
+
+        next_marker = list_functions_response.next_marker().map(String::from);
+        if next_marker.is_none() {
+            break;
+        }
+    }
+
+    lambda_function_names.sort();
+    println!(
+        "Found [{}] lambda function names:",
+        lambda_function_names.len()
+    );
+    for name in lambda_function_names {
+        println!("{}", name)
+    }
+
+    //XXX
+    return Ok(());
 
     let mut terminal = ratatui::init();
     let app_result = App::default().run(&mut terminal);

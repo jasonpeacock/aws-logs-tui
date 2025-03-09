@@ -33,6 +33,21 @@ Thus, the goals are:
 - Use `~/.aws/configuration` for Profile selection, or environment, or commandline args
 - Document required IAM policy permissions for Lambda & CW Logs
 
+## TODO
+
+- [x] Use [clap](https://docs.rs/clap/latest/clap/) for arg-parsing
+- `aws_config`
+  - [x] Use `AWS_PROFILE` from environment
+  - [x] Use `--profile` from args
+  - [x] Use `--region` from args
+  - [ ] Refactor to be pretty & tested
+  - [ ] Research other AWS TUIs/CLIs to see what they call `--profile/--region`
+  - [ ] Create a TUI profile selector using `~/.aws/config` contents
+- `aws_sdk_lambda`
+  - [x] Print functions to STDOUT
+  - [ ] Refactor to be pretty & tested
+- [ ] Use [tui-realm](https://github.com/veeso/tui-realm) for MVC framework
+
 ## Issues
 
 None yet...
