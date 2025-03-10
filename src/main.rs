@@ -15,8 +15,7 @@ use ratatui::{
 
 use clap::Parser;
 
-use aws_config::{BehaviorVersion, Region};
-use aws_sdk_lambda;
+use aws_logs_tui::aws;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -36,41 +35,11 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    let mut config = aws_config::defaults(BehaviorVersion::latest());
-    if let Some(profile_name) = cli.profile {
-        config = config.profile_name(profile_name);
-    }
-    if let Some(region) = cli.region {
-        config = config.region(Region::new(region.clone()));
-    }
-    let sdk_config = config.load().await;
+    let config = aws::config::load_config(cli.profile, cli.region).await;
 
-    let lambda_client = aws_sdk_lambda::Client::new(&sdk_config);
+    let lambda_client = aws::lambda::Client::new(&config);
+    let lambda_function_names = lambda_client.get_all_function_names().await;
 
-    let mut lambda_function_names = Vec::new();
-    let mut next_marker = None;
-
-    loop {
-        let mut list_functions_request = lambda_client.list_functions();
-        if let Some(marker) = next_marker {
-            list_functions_request = list_functions_request.marker(marker);
-        }
-
-        let list_functions_response = list_functions_request.send().await?;
-        let functions = list_functions_response.functions();
-        for function in functions {
-            if let Some(name) = &function.function_name {
-                lambda_function_names.push(name.clone())
-            }
-        }
-
-        next_marker = list_functions_response.next_marker().map(String::from);
-        if next_marker.is_none() {
-            break;
-        }
-    }
-
-    lambda_function_names.sort();
     println!(
         "Found [{}] lambda function names:",
         lambda_function_names.len()

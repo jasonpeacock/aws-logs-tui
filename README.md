@@ -36,16 +36,21 @@ Thus, the goals are:
 ## TODO
 
 - [x] Use [clap](https://docs.rs/clap/latest/clap/) for arg-parsing
+- [ ] Configure proper logging with [tracing](https://docs.rs/tracing/latest/tracing/index.html)
 - `aws_config`
   - [x] Use `AWS_PROFILE` from environment
   - [x] Use `--profile` from args
   - [x] Use `--region` from args
-  - [ ] Refactor to be pretty & tested
+  - [x] Refactor to be pretty
+  - [x] Add code docs
+  - [ ] Add tests w/mocking
   - [ ] Research other AWS TUIs/CLIs to see what they call `--profile/--region`
   - [ ] Create a TUI profile selector using `~/.aws/config` contents
 - `aws_sdk_lambda`
   - [x] Print functions to STDOUT
-  - [ ] Refactor to be pretty & tested
+  - [x] Refactor to be pretty
+  - [x] Add code docs
+  - [ ] Add tests w/mocking
 - [ ] Use [tui-realm](https://github.com/veeso/tui-realm) for MVC framework
 
 ## Issues
