@@ -37,21 +37,23 @@ Thus, the goals are:
 
 - [x] Use [clap](https://docs.rs/clap/latest/clap/) for arg-parsing
 - [ ] Configure proper logging with [tracing](https://docs.rs/tracing/latest/tracing/index.html)
+- [ ] Use [tui-realm](https://github.com/veeso/tui-realm) for MVC framework
 - `aws_config`
   - [x] Use `AWS_PROFILE` from environment
   - [x] Use `--profile` from args
   - [x] Use `--region` from args
   - [x] Refactor to be pretty
   - [x] Add code docs
-  - [ ] Add tests w/mocking
+  - [ ] Add tests w/[mocking](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/testing.html)
   - [ ] Research other AWS TUIs/CLIs to see what they call `--profile/--region`
   - [ ] Create a TUI profile selector using `~/.aws/config` contents
 - `aws_sdk_lambda`
   - [x] Print functions to STDOUT
   - [x] Refactor to be pretty
   - [x] Add code docs
-  - [ ] Add tests w/mocking
-- [ ] Use [tui-realm](https://github.com/veeso/tui-realm) for MVC framework
+  - [ ] Add tests w/[mocking](https://docs.aws.amazon.com/sdk-for-rust/latest/dg/testing.html)
+- Select Lambda function TUI
+  - [x] Display list of Lambda functions
 
 ## Issues
 
@@ -62,6 +64,7 @@ None yet...
 - [`rust-aws-tui`](https://github.com/resola-ai/rust-aws-tui)
 - [`stu`](https://github.com/lusingander/stu?ref=terminaltrove)
 - [`ssm-tui`](https://github.com/sandeshgrangdan/ssm-tui)
+- [`ddv`](https://github.com/lusingander/ddv)
 
 ## License
 

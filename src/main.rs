@@ -1,21 +1,31 @@
-use color_eyre::{
-    Result,
-    eyre::{WrapErr, bail},
-};
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
+#![allow(dead_code, unused_imports)]
+use color_eyre::Result;
 use ratatui::{
     DefaultTerminal, Frame,
     buffer::Buffer,
-    layout::Rect,
-    style::Stylize,
-    symbols::border,
+    crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    layout::{Constraint, Layout, Rect},
+    style::{
+        Color, Modifier, Style, Stylize,
+        palette::tailwind::{BLUE, GREEN, SLATE},
+    },
+    symbols,
     text::{Line, Text},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{
+        Block, Borders, HighlightSpacing, List, ListItem, ListState, Padding, Paragraph,
+        StatefulWidget, Widget, Wrap,
+    },
 };
 
 use clap::Parser;
 
 use aws_logs_tui::aws;
+
+const FUNCTION_HEADER_STYLE: Style = Style::new().fg(SLATE.c100).bg(BLUE.c800);
+const NORMAL_ROW_BG: Color = SLATE.c950;
+const ALT_ROW_BG_COLOR: Color = SLATE.c900;
+const SELECTED_STYLE: Style = Style::new().bg(SLATE.c800).add_modifier(Modifier::BOLD);
+const TEXT_FG_COLOR: Color = SLATE.c200;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -38,176 +48,206 @@ async fn main() -> Result<()> {
     let config = aws::config::load_config(cli.profile, cli.region).await;
 
     let lambda_client = aws::lambda::Client::new(&config);
-    let lambda_function_names = lambda_client.get_all_function_names().await;
+    let lambda_functions = lambda_client.get_all_functions().await;
 
-    println!(
-        "Found [{}] lambda function names:",
-        lambda_function_names.len()
-    );
-    for name in lambda_function_names {
-        println!("{}", name)
+    println!("Found [{}] lambda functions:", lambda_functions.len());
+    for function in &lambda_functions {
+        println!("{}", function.name)
     }
 
-    //XXX
-    return Ok(());
+    // TODO The app should load the function names itself? Or do we treat this
+    // as a static list? Or do we offer an option to refresh? Or automatically
+    // refresh?
+    let app = App {
+        function_list: {
+            FunctionList {
+                functions: Some(lambda_functions),
+                state: ListState::default(),
+            }
+        },
+        ..Default::default()
+    };
 
-    let mut terminal = ratatui::init();
-    let app_result = App::default().run(&mut terminal);
+    let terminal = ratatui::init();
+    let app_result = app.run(terminal);
     ratatui::restore();
     app_result
 }
 
 #[derive(Debug, Default)]
-pub struct App {
-    counter: u8,
-    exit: bool,
+struct FunctionList {
+    functions: Option<Vec<aws::lambda::Function>>,
+    state: ListState,
+}
+
+#[derive(Debug, Default)]
+struct App {
+    function_list: FunctionList,
+    should_exit: bool,
 }
 
 impl App {
-    /// runs the application's main loop until the user quits
-    pub fn run(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
-        while !self.exit {
-            terminal.draw(|frame| self.render_frame(frame))?;
-            self.handle_events().wrap_err("handle events failed")?;
+    fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+        while !self.should_exit {
+            terminal.draw(|frame| frame.render_widget(&mut self, frame.area()))?;
+            if let Event::Key(key) = event::read()? {
+                self.handle_key(key)
+            };
         }
         Ok(())
     }
 
-    fn render_frame(&self, frame: &mut Frame) {
-        frame.render_widget(self, frame.area());
-    }
-
-    /// updates the application's state based on user input
-    fn handle_events(&mut self) -> Result<()> {
-        match event::read()? {
-            // it's important to check that the event is a key press event as
-            // crossterm also emits key release and repeat events on Windows.
-            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => self
-                .handle_key_event(key_event)
-                .wrap_err_with(|| format!("handling key event failed:\n{key_event:#?}")),
-            _ => Ok(()),
+    fn handle_key(&mut self, key: KeyEvent) {
+        if key.kind != KeyEventKind::Press {
+            return;
         }
-    }
-
-    fn handle_key_event(&mut self, key_event: KeyEvent) -> Result<()> {
-        match key_event.code {
-            KeyCode::Char('q') => self.exit(),
-            KeyCode::Left => self.decrement_counter()?,
-            KeyCode::Right => self.increment_counter()?,
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => self.should_exit = true,
+            KeyCode::Char('h') | KeyCode::Left => self.select_none(),
+            KeyCode::Char('j') | KeyCode::Down => self.select_next(),
+            KeyCode::Char('k') | KeyCode::Up => self.select_previous(),
+            KeyCode::Char('g') | KeyCode::Home => self.select_first(),
+            KeyCode::Char('G') | KeyCode::End => self.select_last(),
             _ => {}
         }
-        Ok(())
     }
 
-    fn exit(&mut self) {
-        self.exit = true;
+    fn select_none(&mut self) {
+        self.function_list.state.select(None);
     }
 
-    fn decrement_counter(&mut self) -> Result<()> {
-        self.counter -= 1;
-        Ok(())
+    fn select_next(&mut self) {
+        self.function_list.state.select_next();
+    }
+    fn select_previous(&mut self) {
+        self.function_list.state.select_previous();
     }
 
-    fn increment_counter(&mut self) -> Result<()> {
-        self.counter += 1;
-        if self.counter > 2 {
-            bail!("counter overflow");
-        }
-        Ok(())
+    fn select_first(&mut self) {
+        self.function_list.state.select_first();
+    }
+
+    fn select_last(&mut self) {
+        self.function_list.state.select_last();
     }
 }
 
-impl Widget for &App {
+impl Widget for &mut App {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let title = Line::from(" Counter App Tutorial ".bold());
-        let instructions = Line::from(vec![
-            " Decrement ".into(),
-            "<Left>".blue().bold(),
-            " Increment ".into(),
-            "<Right>".blue().bold(),
-            " Quit ".into(),
-            "<Q> ".blue().bold(),
-        ]);
-        let block = Block::default()
-            .title(title.centered())
-            .title_bottom(instructions.centered())
-            .borders(Borders::ALL)
-            .border_set(border::THICK);
+        let [header_area, main_area, footer_area] = Layout::vertical([
+            Constraint::Length(2),
+            Constraint::Fill(1),
+            Constraint::Length(1),
+        ])
+        .areas(area);
 
-        let counter_text = Text::from(vec![Line::from(vec![
-            "Value: ".into(),
-            self.counter.to_string().yellow(),
-        ])]);
+        let [list_area, item_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Fill(1)]).areas(main_area);
 
-        Paragraph::new(counter_text)
+        App::render_header(header_area, buf);
+        App::render_footer(footer_area, buf);
+        self.render_list(list_area, buf);
+        self.render_selected_item(item_area, buf);
+    }
+}
+
+/// Rendering logic for the app
+impl App {
+    fn render_header(area: Rect, buf: &mut Buffer) {
+        Paragraph::new("AWS Logs TUI")
+            .bold()
             .centered()
+            .render(area, buf);
+    }
+
+    fn render_footer(area: Rect, buf: &mut Buffer) {
+        Paragraph::new("Use ↓↑ to move, ← to unselect, → to change status, g/G to go top/bottom.")
+            .centered()
+            .render(area, buf);
+    }
+
+    fn render_list(&mut self, area: Rect, buf: &mut Buffer) {
+        let block = Block::new()
+            .title(Line::raw("TODO List").centered())
+            .borders(Borders::TOP)
+            .border_set(symbols::border::EMPTY)
+            .border_style(FUNCTION_HEADER_STYLE)
+            .bg(NORMAL_ROW_BG);
+
+        // Iterate through all elements in the `functions` and stylize them.
+        let functions: Vec<ListItem> = self
+            .function_list
+            .functions
+            .clone()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .map(|(i, function)| {
+                let color = alternate_colors(i);
+                ListItem::from(ListItemFunction(function.clone())).bg(color)
+            })
+            .collect();
+
+        // Create a List from all list functions and highlight the currently selected one
+        let list = List::new(functions)
             .block(block)
+            .highlight_style(SELECTED_STYLE)
+            .highlight_symbol(">")
+            .highlight_spacing(HighlightSpacing::Always);
+
+        // We need to disambiguate this trait method as both `Widget` and `StatefulWidget` share the
+        // same method name `render`.
+        StatefulWidget::render(list, area, buf, &mut self.function_list.state);
+    }
+
+    fn render_selected_item(&self, area: Rect, buf: &mut Buffer) {
+        let info = if let Some(i) = self.function_list.state.selected() {
+            match &self.function_list.functions {
+                None => "No functions available...".to_string(),
+                Some(functions) => functions[i].name.clone(),
+            }
+        } else {
+            "Nothing selected...".to_string()
+        };
+
+        // We show the function's info under the list in this paragraph
+        let block = Block::new()
+            .title(Line::raw("Function Info").centered())
+            .borders(Borders::TOP)
+            .border_set(symbols::border::EMPTY)
+            .border_style(FUNCTION_HEADER_STYLE)
+            .bg(NORMAL_ROW_BG)
+            .padding(Padding::horizontal(1));
+
+        // We can now render the item info
+        Paragraph::new(info)
+            .block(block)
+            .fg(TEXT_FG_COLOR)
+            .wrap(Wrap { trim: false })
             .render(area, buf);
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use ratatui::style::Style;
-
-    use super::*;
-
-    #[test]
-    fn render() {
-        let app = App::default();
-        let mut buf = Buffer::empty(Rect::new(0, 0, 50, 4));
-
-        app.render(buf.area, &mut buf);
-
-        let mut expected = Buffer::with_lines(vec![
-            "┏━━━━━━━━━━━━━ Counter App Tutorial ━━━━━━━━━━━━━┓",
-            "┃                    Value: 0                    ┃",
-            "┃                                                ┃",
-            "┗━ Decrement <Left> Increment <Right> Quit <Q> ━━┛",
-        ]);
-        let title_style = Style::new().bold();
-        let counter_style = Style::new().yellow();
-        let key_style = Style::new().blue().bold();
-        expected.set_style(Rect::new(14, 0, 22, 1), title_style);
-        expected.set_style(Rect::new(28, 1, 1, 1), counter_style);
-        expected.set_style(Rect::new(13, 3, 6, 1), key_style);
-        expected.set_style(Rect::new(30, 3, 7, 1), key_style);
-        expected.set_style(Rect::new(43, 3, 4, 1), key_style);
-
-        assert_eq!(buf, expected);
+const fn alternate_colors(i: usize) -> Color {
+    if i % 2 == 0 {
+        NORMAL_ROW_BG
+    } else {
+        ALT_ROW_BG_COLOR
     }
+}
 
-    #[test]
-    fn handle_key_event() {
-        let mut app = App::default();
-        app.handle_key_event(KeyCode::Right.into()).unwrap();
-        assert_eq!(app.counter, 1);
+struct ListItemFunction(aws::lambda::Function);
 
-        app.handle_key_event(KeyCode::Left.into()).unwrap();
-        assert_eq!(app.counter, 0);
-
-        let mut app = App::default();
-        app.handle_key_event(KeyCode::Char('q').into()).unwrap();
-        assert!(app.exit);
+impl From<&ListItemFunction> for ListItem<'_> {
+    fn from(value: &ListItemFunction) -> Self {
+        let line = Line::styled(value.0.name.clone(), TEXT_FG_COLOR);
+        ListItem::new(line)
     }
+}
 
-    #[test]
-    #[should_panic(expected = "attempt to subtract with overflow")]
-    fn handle_key_event_panic() {
-        let mut app = App::default();
-        let _ = app.handle_key_event(KeyCode::Left.into());
-    }
-
-    #[test]
-    fn handle_key_event_overflow() {
-        let mut app = App::default();
-        assert!(app.handle_key_event(KeyCode::Right.into()).is_ok());
-        assert!(app.handle_key_event(KeyCode::Right.into()).is_ok());
-        assert_eq!(
-            app.handle_key_event(KeyCode::Right.into())
-                .unwrap_err()
-                .to_string(),
-            "counter overflow"
-        );
+impl From<ListItemFunction> for Text<'_> {
+    fn from(value: ListItemFunction) -> Self {
+        let line = Line::styled(value.0.name, TEXT_FG_COLOR);
+        Text::from(line)
     }
 }
